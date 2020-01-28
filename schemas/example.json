@@ -1,0 +1,15 @@
+{
+  "GET /users/<userId:int>": [
+    {
+      "response": "\"id\": ${userId}, \"name\": \"John Wick\", \"email\": \"johnwick@gmail.com\""
+    }
+  ],
+  "POST /users/<userName:str>/<userId:int>": [
+    {
+      "request": {
+        "email": "<email:str>"
+      },
+      "response": "'id': ${userId}, 'name': '${userName}', 'email': '${email}'"
+    }
+  ]
+}
