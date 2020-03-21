@@ -1,16 +1,19 @@
 import pydoc
 import re
+import string
 from collections import OrderedDict
+from config import Config
+from util import sub
 
 
 class Template(object):
     """
     Schema template base class
     """
+    _pattern = r"[\"|']?[{|<](\w+):(int|str|float|list)[}|>][\"|']?"
 
     def __init__(self, body):
         self.body = body
-        self._pattern = r"[\"|']?[{|<](\w+):(int|str)[}|>][\"|']?"
 
     def to_regex(self):
         """Returns template representation as normal regex"""
@@ -26,17 +29,29 @@ class Template(object):
 
     def get_sub_values(self, source):
         """Gets dictionary of values to paste in response string"""
+        if not source:
+            return {}
+
+        r = self.to_regex()
+
         vals = re.findall(self.to_regex(), str(source))
+        if not vals:
+            return {}
+
+        subs = self.substitutions()
+
         vals = vals[0] if isinstance(vals[0], tuple) else vals
-        dict_vals = dict(zip(self.substitutions().keys(), vals))
+        dict_vals = dict(zip(subs.keys(), vals))
         for k, v in dict_vals.items():
-            type_ = self.substitutions()[k]
+            type_ = subs[k]
             try:
-                typed_v = type_(v)
-                # typed_v = typed_v if isinstance(typed_v, int) else typed_v[1:-1]
+                if type_ is list:
+                    typed_v = v.strip("[]").split(", ")
+                else:
+                    typed_v = type_(v)
                 dict_vals[k] = typed_v
             except:
-                raise Exception(f"Can't convert {v} to type {type_}")
+                raise Exception(f"Invalid request. Can't convert \"{v}\" to type {type_}", 400)
         return dict_vals
 
 
@@ -54,23 +69,41 @@ class URLTemplate(Template):
 
     def to_regex(self):
         result = re.sub(self._pattern, r"(\\w+)", self.path)
-        if result.endswith("(\\w+)"):
-            result += "$"
-        result = "^" + result
+        result = f"^{result}$"
         return result
 
 
-class RequestTemplate(Template):
+class SchemaItemTemplate(Template):
     """
-    Request body schema template description
+    Schema item template description
     """
 
-    def __init__(self, body):
-        super().__init__(body)
-        self.body = dict(OrderedDict(sorted(body.items())))
+    def __init__(self, **kwargs):
+        req = kwargs.pop("request", Config.ANY)
+        super().__init__(req)
+        self.body = dict(OrderedDict(sorted(req.items())))
+        self.response = kwargs.pop("response")
+        self.key = kwargs.pop("key", "")
+        self.create_cache = kwargs.pop("create_cache", False)
+        self.rule = kwargs.pop("rule", {})
+        self.content_type = kwargs.pop("content_type", Config.JSON_MIME_TYPE)
+        self.variables = kwargs.pop("variables", {})
 
     def __str__(self):
         return str(self.body)
 
+    def substitute(self, ctx):
+        """Formats request template body with current context"""
+        result = {}
+        for k, v in self.body.items():
+            if isinstance(v, str):
+                result.update({k: sub(v, **ctx)})
+            else:
+                result.update({k: v})
+        return result
+
     def to_regex(self):
-        return re.sub(self._pattern, r"[\"|']?([a-zA-Z0-9_@.\s]+)[\"|']?", self.__str__())
+        return re.sub(
+            self._pattern, r"[\"|']?([^\'\"]+)[\"|']?",
+            self.__str__()
+        )
