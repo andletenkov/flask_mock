@@ -1,6 +1,5 @@
 import pydoc
 import re
-import string
 from collections import OrderedDict
 from config import Config
 from util import sub
@@ -88,6 +87,7 @@ class SchemaItemTemplate(Template):
         self.rule = kwargs.pop("rule", {})
         self.content_type = kwargs.pop("content_type", Config.JSON_MIME_TYPE)
         self.variables = kwargs.pop("variables", {})
+        self.callback = kwargs.pop("callback", {})
 
     def __str__(self):
         return str(self.body)
