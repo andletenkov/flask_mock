@@ -11,7 +11,9 @@ class MockCache(Cache):
     def all_data(self):
         """Returns list of all cached items"""
         keys = [k.decode() for k in self.cache._read_clients.keys()]
-        return [self.get(k.replace(self.cache.key_prefix, "")) for k in keys]
+        for k in keys:
+            k_ = k.replace(self.cache.key_prefix, "")
+            yield k_, self.get(k_)
 
     def find(self, key, **rules):
         """Finds item in cache by specified conditions"""
@@ -20,13 +22,14 @@ class MockCache(Cache):
                 return int(v)
             except ValueError:
                 return v
-        r = filter(
-            lambda item: item["_key"] == key and
-            all([item[k] == v or item[k] == try_int(v) for k, v in rules.items()]),
-            self.all_data
+        r = iter(
+            item for item in self.all_data if item[1]["_key"] == key and
+            all([item[1][k] == v or item[1][k] == try_int(v) for k, v in rules.items()])
         )
         try:
-            return next(r)
+            found = next(r)
+            self.delete(found[0])
+            return found
         except StopIteration:
             return None
 
