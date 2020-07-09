@@ -1,5 +1,8 @@
+import hashlib
 import re
 from collections import OrderedDict
+
+import requests
 from flask import request, Response
 from templates import URLTemplate, SchemaItemTemplate
 from config import Config
@@ -47,9 +50,10 @@ class RequestHandler(object):
         self.data = None
         self.url_template = None
         self.template = None
+        self.global_ctx = {}
 
     @property
-    def context(self):
+    def request_context(self):
         """Returns dict containing request object context variables"""
         ctx_vars = [v for v in request.__dir__() if not v.startswith("_") and "json" not in v]
         ctx_dct = {attr.upper(): getattr(request, attr) for attr in ctx_vars if isinstance(getattr(request, attr), str)}
@@ -71,25 +75,34 @@ class RequestHandler(object):
     def req_handled(self, value):
         self._req_handled = value
 
+    @staticmethod
+    def get_request_data():
+        try:
+            json_data = str_to_dict(request.data.decode()) if request.data else {}
+            all_data = {
+                **json_data,
+                **dict(request.args),
+                **dict(request.form)
+            }
+            return dict(OrderedDict(sorted(all_data.items())))
+        except:
+            raise Exception("Invalid request data format", 500)
+
     def handle(self):
         """Parses request object to internal fields"""
         self.method = request.method
 
         path = request.path[request.path.find("/", 1):]
         self.path = path[:-1] if path.endswith("/") and len(path) > 1 else path
-
-        try:
-            json_data = str_to_dict(request.data.decode()) if request.data else {}
-            r = request.args
-            all_data = {**json_data, **dict(request.args)}
-            self.data = dict(OrderedDict(sorted(all_data.items())))
-        except:
-            raise Exception("Invalid request data format", 500)
-
+        self.data = self.get_request_data()
         self.url_template = self._find_url_template()
         self.template = self._find_suited_item()
-
+        self.global_ctx = self._build_ctx()
+        self._update_ctx()
         self._req_handled = True
+
+    def _update_ctx(self):
+        pass
 
     def _find_url_template(self):
         templates = [URLTemplate(k) for k in self.schema.keys()]
@@ -123,7 +136,7 @@ class RequestHandler(object):
 
         # find direct occurrences
         filtered = list(filter(
-            lambda r: r.body == Config.ANY or r.substitute(self.context) == self.data, templates
+            lambda r: r.body == Config.ANY or r.substitute(self.request_context) == self.data, templates
         ))
         if filtered:
             return next(iter(filtered))
@@ -139,28 +152,32 @@ class RequestHandler(object):
             f"Request {self.method} {self.path} with data '{self.data}' doesn't match any endpoint in schema"
         )
 
-    def build_response(self):
-        """Renders response template with substitutions"""
-        if not self.req_handled:
-            raise Exception(f"{self.__class__} doesn't handle any request")
+    def _build_ctx(self):
 
-        subs = {
+        ctx = {
             **self.template.get_sub_values(self.data),
-            **self.url_template.get_sub_values(self.path)
+            **self.url_template.get_sub_values(self.path),
+            **self.template.variables
         }
 
         cache_data = None
 
         if self.template.key:
             if self.template.create_cache:
-                self.cache.add_new(self.template.key, {**subs, **self.template.variables})
+                self.cache.add_new(self.template.key, ctx)
             else:
                 if self.template.rule:
-                    rules = {k: sub(v, **subs) for k, v in self.template.rule.items()}
+                    rules = {k: sub(v, **ctx) for k, v in self.template.rule.items()}
                     cache_data = self.cache.find(self.template.key, **rules)
 
         if cache_data:
-            subs.update(cache_data)
+            ctx.update(cache_data)
+        return ctx
+
+    def build_response(self):
+        """Renders response template with substitutions"""
+        if not self.req_handled:
+            raise Exception(f"{self.__class__} doesn't handle any request")
 
         if isinstance(self.template.response, list):
             try:
@@ -174,5 +191,32 @@ class RequestHandler(object):
         else:
             status, body = 200, self.template.response
 
-        resp = sub(body, **subs, **self.context)
+        self._callback(**self.global_ctx, **self.request_context)
+        resp = sub(body, **self.global_ctx, **self.request_context)
+
         return Response(resp, mimetype=self.template.content_type), status
+
+    def _callback(self, **data):
+        cb = self.template.callback
+        if not cb:
+            return
+
+        callback_url = sub(cb.get("url"), **data)
+
+        try:
+            getattr(requests, cb.get("method", "").lower())(
+                url=callback_url,
+                data=sub(cb.get("data"), **data),
+                headers=cb.get("headers", {})
+            )
+        except:
+            raise Exception(f"Can't send callback to \"{callback_url}\"", 500)
+
+
+class ExampleRequestHandler(RequestHandler):
+    """
+    Implement your own request handler if needed
+    """
+
+    def _update_ctx(self):
+        print("overriden method!")
