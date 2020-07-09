@@ -6,7 +6,7 @@ from json import JSONDecodeError
 from handler import RequestHandler, SkrillRequestHandler
 
 HANDLERS = {
-    # "example": ExamppleRequestHandler
+    # "example": ExampleRequestHandler
     # implement your own handler if needed!
 }
 
