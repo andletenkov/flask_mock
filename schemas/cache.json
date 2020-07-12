@@ -11,7 +11,7 @@
   "POST /users": [
     {
       "operation_key": "user",
-      "create_cache": True,
+      "create_cache": true,
       "variables": {
         "userId": 123
       },
