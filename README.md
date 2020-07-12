@@ -10,3 +10,10 @@ Docker need to be installed
 4. Obtain response: "\"id\": 666, \"name\": \"John Wick\", \"email\": \"johnwick@gmail.com\""
 
 # Example with caching data between requests
+It's possible to share data between Flask request contexts via Redis cache if request have same `key`
+1. Execute POST {host:port}/cache/users with some json body: f.e., {"email": "rickastley@gmail.com"}
+2. Obtain response "\"id\": 123, \"status\": \"ok\""
+3. Execute GET {host:port}/cache/users/123
+4. Obtain response "\"id\": 123, \"email\": \"rickastley@gmail.com\""
+
+So `email`parameter value was shared between two unrelated Flask contexts
