@@ -1,1 +1,24 @@
-
+{
+  "GET /users/<id:int>": [
+    {
+      "operation_key": "user",
+      "rules": {
+        "id": "${userId}"
+      },
+      "response": "\"id\": ${userId}, \"email\": \"${email}\""
+    }
+  ],
+  "POST /users": [
+    {
+      "operation_key": "user",
+      "create_cache": True,
+      "variables": {
+        "userId": 123
+      },
+      "request": {
+        "email": "<email:str>"
+      },
+      "response": "\"id\": ${userId}, \"status\": \"ok\""
+    }
+  ]
+}
